@@ -32,3 +32,4 @@ Udfyld og ret sammen – det her er jeres "plan" for spillet.
 - [ ] Power-ups der falder ned (større skive, langsom bold, ekstra liv)
 - [ ] To-spiller: én skive i bunden, én i toppen
 - [ ] Mursten der skal skydes i stykker
+- [x] Bølget loft der bliver mere kantet jo flere point man har

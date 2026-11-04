@@ -36,6 +36,10 @@ const LIV             = 1;     // 1 = forfra ved første miss. Prøv 3!
 const POINT_FOR_SEJR  = 25;    // Hvor mange hits der skal til for at vinde
 const BOLD_FARVE      = "#ff5577";
 const SKIVE_FARVE     = "#33ddff";
+const LOFT_FARVE      = "#ffcc33";
+const LOFT_HOEJDE     = 95;    // Hvor langt nede loftet ligger (i midten)
+const LOFT_MIN_BOELGE = 4;     // Hvor store bølgerne er i starten
+const LOFT_MAX_BOELGE = 38;    // Hvor store bølgerne kan blive til sidst
 
 // ============================================================
 //  SELVE SPILLET
@@ -48,10 +52,83 @@ let skive, bold, point, liv, tilstand; // tilstand: "klar", "spiller", "tabt", "
 let rekord = 0;
 const taster = {};
 
+// ---------- Det bølgede loft ----------
+// Loftet er en række punkter fra venstre til højre. Mellem punkterne er der lige streger.
+// "loft" er det man ser nu, "loftMaal" er den form loftet langsomt glider over i.
+const LOFT_PUNKTER = 48;
+let loft = [], loftMaal = [];
+
+function lavLoft(svaerhed) {
+  // svaerhed går fra 0 (starten) til 1 (lige før man vinder)
+  const boelge = LOFT_MIN_BOELGE + (LOFT_MAX_BOELGE - LOFT_MIN_BOELGE) * svaerhed;
+
+  // 1) Bløde bølger: en sinus-kurve med tilfældig forskydning
+  const faseA = Math.random() * 6.28, faseB = Math.random() * 6.28;
+  // 2) Kantede takker: få tilfældige punkter forbundet med lige streger
+  const takker = [];
+  const antalTakker = 4 + Math.round(svaerhed * 8);
+  for (let i = 0; i <= antalTakker; i++) takker.push(Math.random() * 2 - 1);
+
+  const nyt = [];
+  for (let i = 0; i <= LOFT_PUNKTER; i++) {
+    const t = i / LOFT_PUNKTER;              // 0 i venstre side, 1 i højre side
+    const blød = 0.7 * Math.sin(t * 6.28 * 2 + faseA) + 0.3 * Math.sin(t * 6.28 * 3 + faseB);
+    const pos = t * antalTakker, j = Math.floor(pos), rest = pos - j;
+    const kantet = takker[j] + (takker[Math.min(j + 1, antalTakker)] - takker[j]) * rest;
+    // Jo sværere, jo mere kantet og mindre blødt
+    const form = blød * (1 - svaerhed) + kantet * svaerhed;
+    nyt.push({ x: t * B, y: LOFT_HOEJDE + form * boelge });
+  }
+  return nyt;
+}
+
+function loftY(x) {
+  // Hvor ligger loftet lige over x?
+  const pos = Math.max(0, Math.min(LOFT_PUNKTER - 0.001, x / B * LOFT_PUNKTER));
+  const i = Math.floor(pos), rest = pos - i;
+  return loft[i].y + (loft[i + 1].y - loft[i].y) * rest;
+}
+
+function hopPaaLoft() {
+  // Find den del af loftet, der er tættest på bolden
+  let bedst = null;
+  for (let i = 0; i < LOFT_PUNKTER; i++) {
+    const a = loft[i], b = loft[i + 1];
+    if (b.x < bold.x - bold.r - 20 || a.x > bold.x + bold.r + 20) continue;
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const t = Math.max(0, Math.min(1, ((bold.x - a.x) * dx + (bold.y - a.y) * dy) / len2));
+    const px = a.x + dx * t, py = a.y + dy * t;
+    const afstand = Math.hypot(bold.x - px, bold.y - py);
+    if (!bedst || afstand < bedst.afstand) bedst = { afstand, dx, dy };
+  }
+  const underLoftet = bold.y < loftY(bold.x);  // Er bolden smuttet op igennem?
+  if (!bedst || (bedst.afstand > bold.r && !underLoftet)) return;
+
+  // Normalen er den retning, stregen "peger" (nedad, ind i banen)
+  const len = Math.hypot(bedst.dx, bedst.dy);
+  const nx = -bedst.dy / len, ny = bedst.dx / len;
+  const ind = bold.vx * nx + bold.vy * ny;
+  if (ind < 0) {
+    // Spejl farten i stregen – ligesom lys i et spejl
+    bold.vx -= 2 * ind * nx;
+    bold.vy -= 2 * ind * ny;
+  }
+  // Sørg for at bolden altid flyver nedad bagefter (ellers kan den sidde fast)
+  const fart = Math.hypot(bold.vx, bold.vy);
+  if (bold.vy < fart * 0.35) {
+    bold.vy = fart * 0.35;
+    bold.vx = Math.sign(bold.vx || 1) * Math.sqrt(fart * fart - bold.vy * bold.vy);
+  }
+  // Skub bolden ud af loftet
+  bold.y = Math.max(bold.y, loftY(bold.x) + bold.r);
+}
+
 function nytSpil() {
   skive = { x: B / 2 - SKIVE_BREDDE / 2, y: H - 40, b: SKIVE_BREDDE, h: 14 };
   point = 0;
   liv = LIV;
+  loft = lavLoft(0);
+  loftMaal = loft;
   nyBold();
   tilstand = "klar";
 }
@@ -59,7 +136,7 @@ function nytSpil() {
 function nyBold() {
   // Bolden starter i toppen og falder skråt ned
   const retning = Math.random() < 0.5 ? -1 : 1;
-  bold = { x: B / 2, y: 80, vx: retning * START_FART * 0.6, vy: START_FART, r: BOLD_STOERRELSE };
+  bold = { x: B / 2, y: LOFT_HOEJDE + LOFT_MAX_BOELGE + 40, vx: retning * START_FART * 0.6, vy: START_FART, r: BOLD_STOERRELSE };
 }
 
 function start() {
@@ -89,13 +166,21 @@ function opdater() {
 
   if (tilstand !== "spiller") return;
 
-  bold.x += bold.vx;
-  bold.y += bold.vy;
+  // Loftet glider stille og roligt over i sin nye form
+  for (let i = 0; i <= LOFT_PUNKTER; i++) loft[i].y += (loftMaal[i].y - loft[i].y) * 0.05;
 
-  // Hop på væggene
-  if (bold.x - bold.r < 0) { bold.x = bold.r; bold.vx *= -1; }
-  if (bold.x + bold.r > B) { bold.x = B - bold.r; bold.vx *= -1; }
-  if (bold.y - bold.r < 0) { bold.y = bold.r; bold.vy *= -1; }
+  // Flyt bolden i små skridt, så den ikke smutter igennem loftet når den er hurtig
+  const skridt = Math.ceil(Math.hypot(bold.vx, bold.vy) / 4);
+  for (let s = 0; s < skridt; s++) {
+    bold.x += bold.vx / skridt;
+    bold.y += bold.vy / skridt;
+
+    // Hop på sidevæggene
+    if (bold.x - bold.r < 0) { bold.x = bold.r; bold.vx = Math.abs(bold.vx); }
+    if (bold.x + bold.r > B) { bold.x = B - bold.r; bold.vx = -Math.abs(bold.vx); }
+    // Hop på det bølgede loft
+    if (bold.y - bold.r < LOFT_HOEJDE + LOFT_MAX_BOELGE + 5) hopPaaLoft();
+  }
 
   // Rammer bolden skiven?
   if (bold.vy > 0 &&
@@ -109,6 +194,8 @@ function opdater() {
     bold.vx = fart * Math.sin(vinkel);
     bold.vy = -fart * Math.cos(vinkel);
     bold.y = skive.y - bold.r;
+    // Loftet skifter form – og bliver vildere jo flere point man har
+    loftMaal = lavLoft(Math.min(1, point / POINT_FOR_SEJR));
     if (point >= POINT_FOR_SEJR) slut("vundet");
   }
 
@@ -134,6 +221,20 @@ function tekst(t, y, str = 28) {
 
 function tegnAlt() {
   tegn.clearRect(0, 0, B, H);
+
+  // Loft: fyld området over stregen og tegn selve kanten
+  tegn.beginPath();
+  tegn.moveTo(0, 0);
+  for (const p of loft) tegn.lineTo(p.x, p.y);
+  tegn.lineTo(B, 0);
+  tegn.closePath();
+  tegn.fillStyle = "#2a2f5c";
+  tegn.fill();
+  tegn.beginPath();
+  loft.forEach((p, i) => i ? tegn.lineTo(p.x, p.y) : tegn.moveTo(p.x, p.y));
+  tegn.strokeStyle = LOFT_FARVE;
+  tegn.lineWidth = 3;
+  tegn.stroke();
 
   // Skive
   tegn.fillStyle = SKIVE_FARVE;
