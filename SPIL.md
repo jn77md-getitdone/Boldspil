@@ -13,11 +13,12 @@ Udfyld og ret sammen – det her er jeres "plan" for spillet.
 - Hver gang bolden rammer skiven: **+1 point** og bolden bliver **8 % hurtigere**
 - Bolden hopper af væggene og loftet
 - Rammer man bolden på kanten af skiven, flyver den skævt – i midten flyver den lige op
-- Ryger bolden forbi skiven: **mister et liv** (man har 3)
+- Ryger bolden forbi skiven: **game over** – tryk for at starte forfra
+  (vil I have flere liv, så ret `LIV` i `index.html`)
 
 ## 4. Hvordan vinder / taber man?
 - **Vinder:** 25 point
-- **Taber:** alle 3 liv er brugt
+- **Taber:** bolden ryger forbi skiven
 - Bonus: slå jeres egen rekord
 
 ## 5. Hvor lang tid varer et spil?
