@@ -35,9 +35,17 @@ const BOLD_STOERRELSE = 12;    // Boldens radius
 const LIV             = 1;     // 1 = forfra ved første miss. Prøv 3!
 const POINT_FOR_SEJR  = 100;   // Hvor mange point der skal til for at vinde
 const HITS_TIL_MAX    = 25;    // Efter så mange hits er loftet helt vildt
-const RING_HVER       = 5;     // Nye ringe for hvert 5. hit
-const LILLE_RING_POINT = 10;   // Point for at skyde gennem den lille ring
-const STOR_RING_POINT  = 5;    // Point for at skyde gennem den store ring
+// Ringe – "START" er i begyndelsen af spillet, "SLUT" er når man nærmer sig sejr
+const RING_FOERSTE     = 5;    // De første ringe kommer efter 5 hits
+const RING_LEVETID     = 5;    // Ringene forsvinder igen efter 5 hits
+const RING_PAUSE_START = 3;    // Hits før nye ringe kommer – i starten ...
+const RING_PAUSE_SLUT  = 1;    // ... og til sidst
+const LILLE_HUL_START  = 3;    // Hullet i den lille ring (gange boldens diameter)
+const LILLE_HUL_SLUT   = 1.6;
+const STOR_HUL_START   = 5;    // Hullet i den store ring
+const STOR_HUL_SLUT    = 2.5;
+const LILLE_POINT_START = 10,  LILLE_POINT_SLUT = 30;
+const STOR_POINT_START  = 5,   STOR_POINT_SLUT  = 15;
 const BOLD_FARVE      = "#ff5577";
 const SKIVE_FARVE     = "#33ddff";
 const LOFT_FARVE      = "#ffcc33";
@@ -53,7 +61,8 @@ const tegn = canvas.getContext("2d");
 const B = canvas.width, H = canvas.height;
 
 let skive, bold, point, hits, liv, tilstand;
-let ringe = [], flydeTekst = []; // tilstand: "klar", "spiller", "tabt", "vundet"
+let ringe = [], flydeTekst = [];
+let naesteRingeVed, ringeVaekVed;      // Ved hvilket hit kommer/forsvinder ringene? // tilstand: "klar", "spiller", "tabt", "vundet"
 let rekord = 0;
 const taster = {};
 
@@ -133,13 +142,31 @@ function hopPaaLoft() {
 // Igennem hullet = point. Rammer man kanten = bolden preller af.
 const KANT = 5; // Kantens radius
 
+// Blander to tal: niveau 0 giver "start", niveau 1 giver "slut"
+function bland(start, slut, niveau) { return start + (slut - start) * niveau; }
+// Point rundet til nærmeste 5
+function rundTil5(x) { return Math.round(x / 5) * 5; }
+
 function lavRinge() {
+  const niveau = Math.min(1, point / POINT_FOR_SEJR); // 0 i starten, 1 ved sejr
   const d = BOLD_STOERRELSE * 2;               // Boldens diameter
   const lilleVenstre = Math.random() < 0.5;    // Hvilken side får den lille ring?
   ringe = [
-    lavRing(d * 3, LILLE_RING_POINT, "#7dff8a", lilleVenstre),
-    lavRing(d * 5, STOR_RING_POINT,  "#c58bff", !lilleVenstre),
+    lavRing(d * bland(LILLE_HUL_START, LILLE_HUL_SLUT, niveau),
+            rundTil5(bland(LILLE_POINT_START, LILLE_POINT_SLUT, niveau)), "#7dff8a", lilleVenstre),
+    lavRing(d * bland(STOR_HUL_START, STOR_HUL_SLUT, niveau),
+            rundTil5(bland(STOR_POINT_START, STOR_POINT_SLUT, niveau)),  "#c58bff", !lilleVenstre),
   ];
+  // Hvornår forsvinder de, og hvornår kommer de næste?
+  const pause = Math.round(bland(RING_PAUSE_START, RING_PAUSE_SLUT, niveau));
+  ringeVaekVed = hits + RING_LEVETID;
+  naesteRingeVed = ringeVaekVed + pause;
+}
+
+function opdaterRinge() {
+  // Kaldes hver gang bolden rammer skiven
+  if (hits >= ringeVaekVed) for (const ring of ringe) ring.forsvinder = true;
+  if (hits >= naesteRingeVed) lavRinge();
 }
 
 function lavRing(hul, vaerdi, farve, venstre) {
@@ -157,6 +184,7 @@ function lavRing(hul, vaerdi, farve, venstre) {
 
 function ringeKollision(forrigeY) {
   for (const ring of ringe) {
+    if (ring.forsvinder) continue;   // Ringe der er ved at forsvinde, kan man ikke ramme
     // 1) Rammer bolden en af de to kanter?
     for (const side of [-1, 1]) {
       const kx = ring.x + side * ring.halv, ky = ring.y;
@@ -194,6 +222,8 @@ function nytSpil() {
   point = 0;
   hits = 0;
   ringe = [];
+  naesteRingeVed = RING_FOERSTE;
+  ringeVaekVed = Infinity;
   flydeTekst = [];
   liv = LIV;
   loft = lavLoft(0);
@@ -256,7 +286,9 @@ function opdater() {
   }
 
   // Ringene fader ind, og point-teksten flyver op og forsvinder
-  for (const ring of ringe) ring.synlig = Math.min(1, ring.synlig + 0.05);
+  // Ringene fader ind – eller ud, hvis deres tid er gået
+  for (const ring of ringe) ring.synlig = Math.min(1, ring.synlig + (ring.forsvinder ? -0.05 : 0.05));
+  ringe = ringe.filter(r => !(r.forsvinder && r.synlig <= 0));
   for (const f of flydeTekst) { f.y -= 1; f.tid--; }
   flydeTekst = flydeTekst.filter(f => f.tid > 0);
 
@@ -275,8 +307,8 @@ function opdater() {
     bold.y = skive.y - bold.r;
     // Loftet skifter form – og bliver vildere jo flere point man har
     loftMaal = lavLoft(Math.min(1, hits / HITS_TIL_MAX));
-    // For hvert 5. hit kommer der nye ringe
-    if (hits % RING_HVER === 0) lavRinge();
+    // Skal ringene forsvinde, eller skal der komme nye?
+    opdaterRinge();
     if (point >= POINT_FOR_SEJR) slut("vundet");
   }
 
@@ -317,6 +349,13 @@ function tegnRing(ring, del) {
     tegn.textAlign = ring.venstre ? "left" : "right";
     const tx = ring.x + (ring.venstre ? ring.halv + 10 : -ring.halv - 10);
     tegn.fillText(ring.vaerdi, tx, ring.y + 7);
+    // Små prikker under ringen viser, hvor mange hits den bliver
+    const tilbage = ringeVaekVed - hits;
+    for (let i = 0; i < tilbage; i++) {
+      tegn.beginPath();
+      tegn.arc(ring.x + (i - (tilbage - 1) / 2) * 10, ring.y + 22, 3, 0, Math.PI * 2);
+      tegn.fill();
+    }
   }
   tegn.globalAlpha = 1;
 }

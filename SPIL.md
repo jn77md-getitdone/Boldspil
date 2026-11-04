@@ -12,8 +12,10 @@ Udfyld og ret sammen – det her er jeres "plan" for spillet.
 ## 3. Regler
 - Hver gang bolden rammer skiven: **+1 point** og bolden bliver **8 % hurtigere**
 - Bolden hopper af væggene og loftet
-- For hvert 5. hit dukker to ringe op: lille = 10 point, stor = 5 point.
-  Igennem hullet giver point, rammer man kanten preller bolden af
+- Efter 5 hits dukker to ringe op (lille = 10 point, stor = 5 point).
+  Igennem hullet giver point, rammer man kanten preller bolden af.
+  Ringene forsvinder efter 5 hits og kommer igen efter 3 hits – kortere pause jo flere point.
+  Jo flere point, jo mindre ringe og jo flere point giver de (op til 30 og 15)
 - Rammer man bolden på kanten af skiven, flyver den skævt – i midten flyver den lige op
 - Ryger bolden forbi skiven: **game over** – tryk for at starte forfra
   (vil I have flere liv, så ret `LIV` i `index.html`)
