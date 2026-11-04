@@ -33,7 +33,11 @@ const SKIVE_BREDDE    = 100;   // Hvor bred skiven er
 const SKIVE_FART      = 8;     // Hvor hurtigt skiven flytter sig med piletasterne
 const BOLD_STOERRELSE = 12;    // Boldens radius
 const LIV             = 1;     // 1 = forfra ved første miss. Prøv 3!
-const POINT_FOR_SEJR  = 25;    // Hvor mange hits der skal til for at vinde
+const POINT_FOR_SEJR  = 100;   // Hvor mange point der skal til for at vinde
+const HITS_TIL_MAX    = 25;    // Efter så mange hits er loftet helt vildt
+const RING_HVER       = 5;     // Nye ringe for hvert 5. hit
+const LILLE_RING_POINT = 10;   // Point for at skyde gennem den lille ring
+const STOR_RING_POINT  = 5;    // Point for at skyde gennem den store ring
 const BOLD_FARVE      = "#ff5577";
 const SKIVE_FARVE     = "#33ddff";
 const LOFT_FARVE      = "#ffcc33";
@@ -48,7 +52,8 @@ const canvas = document.getElementById("spil");
 const tegn = canvas.getContext("2d");
 const B = canvas.width, H = canvas.height;
 
-let skive, bold, point, liv, tilstand; // tilstand: "klar", "spiller", "tabt", "vundet"
+let skive, bold, point, hits, liv, tilstand;
+let ringe = [], flydeTekst = []; // tilstand: "klar", "spiller", "tabt", "vundet"
 let rekord = 0;
 const taster = {};
 
@@ -123,9 +128,73 @@ function hopPaaLoft() {
   bold.y = Math.max(bold.y, loftY(bold.x) + bold.r);
 }
 
+// ---------- Ringene ----------
+// En ring er et hul med en "kant" (en lille kugle) i hver ende.
+// Igennem hullet = point. Rammer man kanten = bolden preller af.
+const KANT = 5; // Kantens radius
+
+function lavRinge() {
+  const d = BOLD_STOERRELSE * 2;               // Boldens diameter
+  const lilleVenstre = Math.random() < 0.5;    // Hvilken side får den lille ring?
+  ringe = [
+    lavRing(d * 3, LILLE_RING_POINT, "#7dff8a", lilleVenstre),
+    lavRing(d * 5, STOR_RING_POINT,  "#c58bff", !lilleVenstre),
+  ];
+}
+
+function lavRing(hul, vaerdi, farve, venstre) {
+  const halv = hul / 2 + KANT;
+  const plads = 40;                            // Plads til pointtallet ved siden af
+  const min = venstre ? halv + 8 : B / 2 + plads + halv;
+  const max = venstre ? B / 2 - plads - halv : B - halv - 8;
+  return {
+    x: min + Math.random() * (max - min),
+    y: H / 3 + (Math.random() * 40 - 20),      // Ca. 2/3 oppe på skærmen
+    halv, hul, vaerdi, farve, venstre,
+    synlig: 0,                                 // Bruges til at fade ringen ind
+  };
+}
+
+function ringeKollision(forrigeY) {
+  for (const ring of ringe) {
+    // 1) Rammer bolden en af de to kanter?
+    for (const side of [-1, 1]) {
+      const kx = ring.x + side * ring.halv, ky = ring.y;
+      const dx = bold.x - kx, dy = bold.y - ky;
+      const afstand = Math.hypot(dx, dy);
+      if (afstand < bold.r + KANT && afstand > 0) {
+        const nx = dx / afstand, ny = dy / afstand;
+        const ind = bold.vx * nx + bold.vy * ny;
+        if (ind < 0) { bold.vx -= 2 * ind * nx; bold.vy -= 2 * ind * ny; } // Spejl farten
+        // Skub bolden ud, så den ikke hænger fast i kanten
+        bold.x = kx + nx * (bold.r + KANT);
+        bold.y = ky + ny * (bold.r + KANT);
+        // Undgå at bolden flyver helt vandret
+        const fart = Math.hypot(bold.vx, bold.vy);
+        if (Math.abs(bold.vy) < fart * 0.25) {
+          bold.vy = Math.sign(bold.vy || 1) * fart * 0.25;
+          bold.vx = Math.sign(bold.vx || 1) * Math.sqrt(fart * fart - bold.vy * bold.vy);
+        }
+      }
+    }
+    // 2) Er bolden fløjet igennem hullet? (den har krydset ringens højde mellem kanterne)
+    const krydsede = (forrigeY - ring.y) * (bold.y - ring.y) <= 0 && forrigeY !== bold.y;
+    if (krydsede && Math.abs(bold.x - ring.x) < ring.hul / 2) {
+      point += ring.vaerdi;
+      flydeTekst.push({ x: ring.x, y: ring.y, tekst: "+" + ring.vaerdi, farve: ring.farve, tid: 60 });
+      ring.vaek = true;
+      if (point >= POINT_FOR_SEJR) slut("vundet");
+    }
+  }
+  ringe = ringe.filter(r => !r.vaek);
+}
+
 function nytSpil() {
   skive = { x: B / 2 - SKIVE_BREDDE / 2, y: H - 40, b: SKIVE_BREDDE, h: 14 };
   point = 0;
+  hits = 0;
+  ringe = [];
+  flydeTekst = [];
   liv = LIV;
   loft = lavLoft(0);
   loftMaal = loft;
@@ -172,6 +241,7 @@ function opdater() {
   // Flyt bolden i små skridt, så den ikke smutter igennem loftet når den er hurtig
   const skridt = Math.ceil(Math.hypot(bold.vx, bold.vy) / 4);
   for (let s = 0; s < skridt; s++) {
+    const forrigeY = bold.y;
     bold.x += bold.vx / skridt;
     bold.y += bold.vy / skridt;
 
@@ -180,12 +250,21 @@ function opdater() {
     if (bold.x + bold.r > B) { bold.x = B - bold.r; bold.vx = -Math.abs(bold.vx); }
     // Hop på det bølgede loft
     if (bold.y - bold.r < LOFT_HOEJDE + LOFT_MAX_BOELGE + 5) hopPaaLoft();
+    // Ringe
+    ringeKollision(forrigeY);
+    if (tilstand !== "spiller") return;
   }
+
+  // Ringene fader ind, og point-teksten flyver op og forsvinder
+  for (const ring of ringe) ring.synlig = Math.min(1, ring.synlig + 0.05);
+  for (const f of flydeTekst) { f.y -= 1; f.tid--; }
+  flydeTekst = flydeTekst.filter(f => f.tid > 0);
 
   // Rammer bolden skiven?
   if (bold.vy > 0 &&
       bold.y + bold.r >= skive.y && bold.y + bold.r <= skive.y + skive.h + bold.vy &&
       bold.x >= skive.x - bold.r && bold.x <= skive.x + skive.b + bold.r) {
+    hits++;
     point++;
     // Hvor på skiven ramte den? (-1 = venstre kant, 0 = midten, 1 = højre kant)
     const hvor = (bold.x - (skive.x + skive.b / 2)) / (skive.b / 2);
@@ -195,7 +274,9 @@ function opdater() {
     bold.vy = -fart * Math.cos(vinkel);
     bold.y = skive.y - bold.r;
     // Loftet skifter form – og bliver vildere jo flere point man har
-    loftMaal = lavLoft(Math.min(1, point / POINT_FOR_SEJR));
+    loftMaal = lavLoft(Math.min(1, hits / HITS_TIL_MAX));
+    // For hvert 5. hit kommer der nye ringe
+    if (hits % RING_HVER === 0) lavRinge();
     if (point >= POINT_FOR_SEJR) slut("vundet");
   }
 
@@ -219,6 +300,27 @@ function tekst(t, y, str = 28) {
   tegn.fillText(t, B / 2, y);
 }
 
+function tegnRing(ring, del) {
+  tegn.globalAlpha = ring.synlig;
+  tegn.strokeStyle = ring.farve;
+  tegn.lineWidth = KANT * 2;
+  tegn.lineCap = "round";
+  tegn.beginPath();
+  // Ringen er en flad ellipse – som en basketkurv set lidt fra siden
+  if (del === "bag") tegn.ellipse(ring.x, ring.y, ring.halv, 10, 0, Math.PI, Math.PI * 2);
+  else               tegn.ellipse(ring.x, ring.y, ring.halv, 10, 0, 0, Math.PI);
+  tegn.stroke();
+  if (del === "for") {
+    // Pointtallet ud for ringen (på den side der vender ind mod midten)
+    tegn.fillStyle = ring.farve;
+    tegn.font = "bold 20px sans-serif";
+    tegn.textAlign = ring.venstre ? "left" : "right";
+    const tx = ring.x + (ring.venstre ? ring.halv + 10 : -ring.halv - 10);
+    tegn.fillText(ring.vaerdi, tx, ring.y + 7);
+  }
+  tegn.globalAlpha = 1;
+}
+
 function tegnAlt() {
   tegn.clearRect(0, 0, B, H);
 
@@ -240,11 +342,27 @@ function tegnAlt() {
   tegn.fillStyle = SKIVE_FARVE;
   tegn.fillRect(skive.x, skive.y, skive.b, skive.h);
 
+  // Ringe: den bageste halvdel tegnes FØR bolden, den forreste EFTER,
+  // så det ser ud som om bolden flyver igennem ringen
+  for (const ring of ringe) tegnRing(ring, "bag");
+
   // Bold
   tegn.fillStyle = BOLD_FARVE;
   tegn.beginPath();
   tegn.arc(bold.x, bold.y, bold.r, 0, Math.PI * 2);
   tegn.fill();
+
+  for (const ring of ringe) tegnRing(ring, "for");
+
+  // Point der flyver op når man rammer en ring
+  tegn.font = "bold 26px sans-serif";
+  tegn.textAlign = "center";
+  for (const f of flydeTekst) {
+    tegn.globalAlpha = f.tid / 60;
+    tegn.fillStyle = f.farve;
+    tegn.fillText(f.tekst, f.x, f.y);
+  }
+  tegn.globalAlpha = 1;
 
   // Point, liv og fart
   tegn.fillStyle = "white";
@@ -255,7 +373,7 @@ function tegnAlt() {
   tegn.fillText("❤".repeat(liv), B - 12, 28);
   tegn.textAlign = "left";
   tegn.font = "14px sans-serif";
-  tegn.fillText(`Fart: ${Math.hypot(bold.vx, bold.vy).toFixed(1)}   Rekord: ${rekord}`, 12, 50);
+  tegn.fillText(`Hits: ${hits}   Fart: ${Math.hypot(bold.vx, bold.vy).toFixed(1)}   Rekord: ${rekord}`, 12, 50);
 
   // Beskeder
   tegn.fillStyle = "#ffcc33";
