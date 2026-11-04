@@ -1,0 +1,33 @@
+# Boldspil – spildesign
+
+Udfyld og ret sammen – det her er jeres "plan" for spillet.
+
+## 1. Hvad går spillet ud på? (én sætning)
+> Hold bolden i luften med skiven – den bliver hurtigere og hurtigere hver gang du rammer den.
+
+## 2. Hvordan styrer man?
+- Musen / fingeren (på tablet) eller piletasterne ← →
+- Mellemrum eller klik for at starte
+
+## 3. Regler
+- Hver gang bolden rammer skiven: **+1 point** og bolden bliver **8 % hurtigere**
+- Bolden hopper af væggene og loftet
+- Rammer man bolden på kanten af skiven, flyver den skævt – i midten flyver den lige op
+- Ryger bolden forbi skiven: **mister et liv** (man har 3)
+
+## 4. Hvordan vinder / taber man?
+- **Vinder:** 25 point
+- **Taber:** alle 3 liv er brugt
+- Bonus: slå jeres egen rekord
+
+## 5. Hvor lang tid varer et spil?
+- Ca. **1–3 minutter**. Kort nok til at man vil prøve "lige én gang til".
+- Er det for let/svært? Skru på tallene øverst i `index.html`.
+
+## 6. Idéer til senere (vælg én ad gangen!)
+- [ ] Lyd når bolden rammer
+- [ ] Skiven bliver mindre jo flere point man har
+- [ ] To bolde på én gang efter 10 point
+- [ ] Power-ups der falder ned (større skive, langsom bold, ekstra liv)
+- [ ] To-spiller: én skive i bunden, én i toppen
+- [ ] Mursten der skal skydes i stykker

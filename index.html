@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boldspil</title>
+<style>
+  body { margin: 0; background: #1b1f3b; color: white; font-family: sans-serif;
+         display: flex; flex-direction: column; align-items: center; }
+  h1 { margin: 12px 0 4px; }
+  canvas { background: #0e1126; border: 3px solid #ffcc33; border-radius: 8px;
+           max-width: 100vw; touch-action: none; }
+  p { opacity: 0.8; }
+</style>
+</head>
+<body>
+<h1>Boldspil</h1>
+<canvas id="spil" width="480" height="640"></canvas>
+<p>Flyt skiven med musen, fingeren eller piletasterne. Tryk MELLEMRUM eller klik for at starte.</p>
+
+<script>
+// ============================================================
+//  INDSTILLINGER – prøv at ændre tallene her og se hvad der sker!
+// ============================================================
+const START_FART      = 4;     // Hvor hurtigt bolden starter
+const FART_OEGNING    = 1.08;  // Bolden bliver 8% hurtigere ved hvert hit
+const MAX_FART        = 16;    // Bolden kan ikke blive hurtigere end dette
+const SKIVE_BREDDE    = 100;   // Hvor bred skiven er
+const SKIVE_FART      = 8;     // Hvor hurtigt skiven flytter sig med piletasterne
+const BOLD_STOERRELSE = 12;    // Boldens radius
+const LIV             = 3;     // Hvor mange gange man må misse
+const POINT_FOR_SEJR  = 25;    // Hvor mange hits der skal til for at vinde
+const BOLD_FARVE      = "#ff5577";
+const SKIVE_FARVE     = "#33ddff";
+
+// ============================================================
+//  SELVE SPILLET
+// ============================================================
+const canvas = document.getElementById("spil");
+const tegn = canvas.getContext("2d");
+const B = canvas.width, H = canvas.height;
+
+let skive, bold, point, liv, tilstand; // tilstand: "klar", "spiller", "tabt", "vundet"
+let rekord = 0;
+const taster = {};
+
+function nytSpil() {
+  skive = { x: B / 2 - SKIVE_BREDDE / 2, y: H - 40, b: SKIVE_BREDDE, h: 14 };
+  point = 0;
+  liv = LIV;
+  nyBold();
+  tilstand = "klar";
+}
+
+function nyBold() {
+  // Bolden starter i toppen og falder skråt ned
+  const retning = Math.random() < 0.5 ? -1 : 1;
+  bold = { x: B / 2, y: 80, vx: retning * START_FART * 0.6, vy: START_FART, r: BOLD_STOERRELSE };
+}
+
+function start() {
+  if (tilstand === "klar") tilstand = "spiller";
+  else if (tilstand === "tabt" || tilstand === "vundet") nytSpil();
+}
+
+// ---------- Styring ----------
+document.addEventListener("keydown", e => {
+  taster[e.key] = true;
+  if (e.key === " ") { start(); e.preventDefault(); }
+});
+document.addEventListener("keyup", e => { taster[e.key] = false; });
+
+function flytTilPointer(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (B / r.width);
+  skive.x = Math.max(0, Math.min(B - skive.b, x - skive.b / 2));
+}
+canvas.addEventListener("pointermove", flytTilPointer);
+canvas.addEventListener("pointerdown", e => { flytTilPointer(e); start(); });
+
+// ---------- Opdater (sker ca. 60 gange i sekundet) ----------
+function opdater() {
+  if (taster["ArrowLeft"])  skive.x = Math.max(0, skive.x - SKIVE_FART);
+  if (taster["ArrowRight"]) skive.x = Math.min(B - skive.b, skive.x + SKIVE_FART);
+
+  if (tilstand !== "spiller") return;
+
+  bold.x += bold.vx;
+  bold.y += bold.vy;
+
+  // Hop på væggene
+  if (bold.x - bold.r < 0) { bold.x = bold.r; bold.vx *= -1; }
+  if (bold.x + bold.r > B) { bold.x = B - bold.r; bold.vx *= -1; }
+  if (bold.y - bold.r < 0) { bold.y = bold.r; bold.vy *= -1; }
+
+  // Rammer bolden skiven?
+  if (bold.vy > 0 &&
+      bold.y + bold.r >= skive.y && bold.y + bold.r <= skive.y + skive.h + bold.vy &&
+      bold.x >= skive.x - bold.r && bold.x <= skive.x + skive.b + bold.r) {
+    point++;
+    // Hvor på skiven ramte den? (-1 = venstre kant, 0 = midten, 1 = højre kant)
+    const hvor = (bold.x - (skive.x + skive.b / 2)) / (skive.b / 2);
+    const fart = Math.min(MAX_FART, Math.hypot(bold.vx, bold.vy) * FART_OEGNING);
+    const vinkel = hvor * 1.0; // op til ca. 57 grader til siden
+    bold.vx = fart * Math.sin(vinkel);
+    bold.vy = -fart * Math.cos(vinkel);
+    bold.y = skive.y - bold.r;
+    if (point >= POINT_FOR_SEJR) slut("vundet");
+  }
+
+  // Missede bolden?
+  if (bold.y - bold.r > H) {
+    liv--;
+    if (liv <= 0) slut("tabt");
+    else { nyBold(); tilstand = "klar"; }
+  }
+}
+
+function slut(resultat) {
+  tilstand = resultat;
+  rekord = Math.max(rekord, point);
+}
+
+// ---------- Tegn ----------
+function tekst(t, y, str = 28) {
+  tegn.font = `bold ${str}px sans-serif`;
+  tegn.textAlign = "center";
+  tegn.fillText(t, B / 2, y);
+}
+
+function tegnAlt() {
+  tegn.clearRect(0, 0, B, H);
+
+  // Skive
+  tegn.fillStyle = SKIVE_FARVE;
+  tegn.fillRect(skive.x, skive.y, skive.b, skive.h);
+
+  // Bold
+  tegn.fillStyle = BOLD_FARVE;
+  tegn.beginPath();
+  tegn.arc(bold.x, bold.y, bold.r, 0, Math.PI * 2);
+  tegn.fill();
+
+  // Point, liv og fart
+  tegn.fillStyle = "white";
+  tegn.font = "bold 20px sans-serif";
+  tegn.textAlign = "left";
+  tegn.fillText(`Point: ${point} / ${POINT_FOR_SEJR}`, 12, 28);
+  tegn.textAlign = "right";
+  tegn.fillText("❤".repeat(liv), B - 12, 28);
+  tegn.textAlign = "left";
+  tegn.font = "14px sans-serif";
+  tegn.fillText(`Fart: ${Math.hypot(bold.vx, bold.vy).toFixed(1)}   Rekord: ${rekord}`, 12, 50);
+
+  // Beskeder
+  tegn.fillStyle = "#ffcc33";
+  if (tilstand === "klar")   tekst("Tryk for at starte", H / 2);
+  if (tilstand === "tabt")   { tekst("GAME OVER", H / 2 - 20, 40); tekst(`Du fik ${point} point`, H / 2 + 20, 24); tekst("Tryk for at prøve igen", H / 2 + 60, 20); }
+  if (tilstand === "vundet") { tekst("DU VANDT! 🏆", H / 2 - 20, 40); tekst("Tryk for at spille igen", H / 2 + 30, 20); }
+}
+
+function loop() {
+  opdater();
+  tegnAlt();
+  requestAnimationFrame(loop);
+}
+
+nytSpil();
+loop();
+</script>
+</body>
+</html>
